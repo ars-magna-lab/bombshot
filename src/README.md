@@ -17,11 +17,20 @@ contexto completo y las decisiones tomadas.
     audio/generar_voces.py    genera todas las locuciones cortas
                                (perdiste, chupito, ganado, chicle,
                                no_armar)
+    audio/generar_totem.py    v2: los sonidos del Totem del Chaman
+                               (fuego/agua/aire/tierra, armar, turno,
+                               erupcion, tribu, "Coge un hueso")
+    audio/importar_clip.py    v2: convierte una grabacion cualquiera al
+                               formato/duracion exactos del firmware
     audio/out/                audios ya generados, listos para usar
     esphome/standalone.yaml   PLAN A: YAML completo y autoconclusivo, listo
                                para compilar (importa el firmware oficial
                                como `packages:`, no hace falta clonar nada)
-    esphome/sounds/           copia de audio/out/ que usa standalone.yaml
+    esphome/totem.yaml        v2 (fiesta dino-neandertal): Simon ritual de
+                               los cuatro elementos sobre un MCP23017 en
+                               el Grove.
+                               Plan y esquema en ../docs/v2-plan.md
+    esphome/sounds/           copia de audio/out/ que usan los YAML
     esphome/grove_cables.yaml snippet de los binary_sensor del Grove, solo
                                para la variante con Home Assistant
     ha/packages/bomba.yaml    variante opcional con Home Assistant

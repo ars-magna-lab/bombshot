@@ -360,6 +360,53 @@ el código es como es, no porque quede trabajo pendiente.
 desmontaje: devolver el aparato a stock cuando ya no se use más (sección
 siguiente).
 
+## v2 (2026-09): El Tótem del Chamán — fiesta dino-neandertal
+
+Segundo juego sobre el mismo Voice PE, con caja nueva. **El plan completo,
+la lista de materiales, el esquema y los pasos pendientes están en
+`docs/v2-plan.md`**; aquí solo las decisiones que no se deducen del código.
+
+- **Juego: Simon ritual de los cuatro elementos** (`src/esphome/totem.yaml`):
+  fuego = rojo, agua = verde, aire = azul, tierra = amarillo (decisión del
+  usuario, con los LEDs que tiene en casa; el verde para el agua no es un
+  error). Cada elemento = pulsador + LED de color + sonido propio
+  (crepitar, burbujas, viento, roca). El altar toca una
+  secuencia, el jugador la repite; 5 rondas seguidas = victoria, fallo o
+  tardar demasiado = erupción. Se eligió sobre "reflejos" y "deducción"
+  porque no hay nada que rearmar entre rondas (el rearme de cables era lo
+  que más cortaba el ritmo en la v1) y porque **luz y sonido van siempre
+  juntos**: en la v1 el número no se oía con el ruido de la fiesta. Al
+  usuario le preocupaba que un Simon se hiciera largo: por eso 5 pasos y
+  una ventana de respuesta que se acorta cada ronda, todo en
+  `substitutions:` para afinarlo jugando.
+- **Premio: gominolas con forma de hueso** ("Has ganado. Coge un hueso.").
+  Los Huesitos de chocolate se descartaron por overkill. Derrota igual que
+  la v1 (chupito), reutilizando `perdiste.flac` y `chupito.flac`.
+- **Hardware nuevo: Waveshare MCP23017 IO Expansion Board** por I2C en el
+  puerto Grove (SDA GPIO1, SCL GPIO2, ahora sí con el hilo de 5 V). En la
+  Waveshare A0/A1/A2 quedan a nivel alto si no se puentean → dirección
+  **0x27**. PA0-PA3 pulsadores a GND con pull-up interno, PB0-PB3 LEDs
+  activo alto con 330 Ω. Sigue haciendo falta `grove_port_power`.
+- Los cuatro sonidos de elemento duran **exactamente 0,6 s** por diseño
+  (`src/audio/generar_totem.py`) para que la secuencia se muestre con un
+  único `delay` por paso. **Sintetizados, no grabaciones libres**: el
+  usuario propuso buscar sonidos públicos gratuitos; se descartó como
+  primera opción porque un recorte de 0,6 s de viento o fuego real es
+  ruido indistinguible, y porque el repo es público (solo valdría CC0).
+  Queda `src/audio/importar_clip.py` para probar grabaciones sin tocar el
+  YAML. Regla del altavoz de la v1 aplicada: el tambor del chamán tuvo
+  que subirse de 190 a 260-440 Hz porque con la afinación "realista" solo
+  el 16 % de su energía quedaba por encima de 300 Hz.
+- Hereda íntegro el modelo de audio y de LEDs de la v1 (un solo script
+  que corta y lanza, delays fijos, sin cronómetros globales,
+  `voice_assistant_leds` apagado por interval, triple clic para armar).
+- **Compilar aquí (2026-09-07, esphome 2026.8.2):** además del venv de
+  esphome, el ESP-IDF necesita crear otro venv y falla por el mismo
+  `ensurepip` que falta. Solución: parchear `create_venv` en
+  `esphome/framework_helpers.py` del venv para que use `--without-pip` y
+  luego ejecute `get-pip.py`. Es un parche local al venv de la sesión, no
+  al repo.
+
 ## Plan: vuelta al estado stock (al terminar la fiesta)
 
 Plan todavía sin ejecutar — el dispositivo vuelve a mi casa después de la

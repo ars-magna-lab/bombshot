@@ -1,0 +1,693 @@
+# =====================================================================
+#  EL TOTEM DEL CHAMAN — bombshot v2 — Voice PE en modo AUTONOMO
+# =====================================================================
+#
+#  Segundo juego sobre el mismo Voice PE, para la fiesta dino-neandertal
+#  (2026). Un Simon ritual de CUATRO ELEMENTOS (fuego, agua, aire, tierra):
+#  el altar toca una secuencia de luces+sonidos y hay que repetirla
+#  pulsando los elementos. Fallo =
+#  erupcion del volcan y chupito. Cinco rondas seguidas = la tribu canta y
+#  te comes una gominola de hueso.
+#
+#    esphome config  totem.yaml    # valida
+#    esphome run     totem.yaml    # compila + flashea
+#
+#  Plan, lista de materiales y esquema: docs/v2-plan.md (raiz del repo).
+#
+#  HEREDA DE LA V1 (standalone.yaml) TODO LO QUE DIO ESTABILIDAD; no
+#  volver atras en nada de esto (los porques largos estan en el YAML de
+#  la v1 y en CLAUDE.md, punto 4):
+#   - Un unico script toca el altavoz (`totem_sonar`): PARA lo que suene y
+#     lanza el clip nuevo. Nunca encola. Las esperas son `delay` fijos del
+#     tamano real del fichero (duraciones medidas con ffprobe, ver [5]).
+#   - Sin cronometros globales que sobrevivan entre rondas: el tiempo de
+#     respuesta es un `delay` dentro de un script (`totem_espera`), y
+#     acertar lo reinicia, fallar/terminar lo mata.
+#   - `voice_assistant_leds` se apaga en cada fase Y por interval: son dos
+#     particiones sobre las mismas 12 LEDs y el firmware de fabrica repinta.
+#   - `reboot_timeout: 0s` en api y wifi.
+#   - `grove_port_power` encendido ANTES del escaneo I2C (sin el, el puerto
+#     Grove no lleva ni señal ni alimentacion).
+#   - Se arma con TRIPLE CLIC en el boton central (`!extend`, concatena).
+#
+#  LO NUEVO: los elementos cuelgan de un MCP23017 (placa Waveshare "MCP23017
+#  IO Expansion Board") por I2C en el puerto Grove. Pines 0-7 = PA0-PA7,
+#  8-15 = PB0-PB7 en la numeracion de ESPHome.
+#     PA0..PA3 -> pulsadores de los 4 elementos (a GND, pull-up interno)
+#     PB0..PB3 -> LEDs de los 4 elementos (activo alto, resistencia en serie)
+#  Direccion: en la Waveshare A0/A1/A2 van a nivel ALTO si no se puentean,
+#  asi que sin tocar nada es 0x27. Si el escaneo I2C del arranque no la
+#  encuentra: 1) grove_port_power, 2) puentes A0-A2, 3) cable.
+# =====================================================================
+
+
+# ---------------------------------------------------------------------
+#  [0] BASE: firmware oficial completo, importado como paquete remoto
+# ---------------------------------------------------------------------
+
+packages:
+  home-assistant-voice: github://esphome/home-assistant-voice-pe/home-assistant-voice.yaml@dev
+
+esphome:
+  name: totem-chaman
+  friendly_name: Totem del chaman
+
+api:
+  reboot_timeout: 0s
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Totem Fallback"
+    password: !secret wifi_ap_password
+  reboot_timeout: 0s
+
+
+# ---------------------------------------------------------------------
+#  [1] AJUSTES DEL JUEGO (lo unico que hay que tocar para afinar)
+# ---------------------------------------------------------------------
+
+substitutions:
+  # Pasos seguidos para ganar. Con 5: partida de ~25 s si se acierta todo.
+  objetivo: "5"
+  # Ventana para pulsar el SIGUIENTE elemento, en ms, en la ronda 1. Cada
+  # ronda se recorta `recorte_ms`; en la ronda 5 quedan 1800 ms. Cada
+  # acierto reinicia la ventana, asi que es "tiempo entre pulsaciones",
+  # no tiempo total.
+  ventana_ms: "3000"
+  recorte_ms: "300"
+  # Duracion de cada sonido de elemento (los cuatro miden 0.60 s exactos por
+  # diseño, generar_totem.py) y pausa a oscuras entre pasos. La pausa
+  # importa: sin ella dos pasos seguidos del mismo elemento se ven como uno.
+  paso_on_ms: "650"
+  paso_off_ms: "250"
+
+
+# ---------------------------------------------------------------------
+#  [2] ESTADO DEL JUEGO
+#
+#    0 = ESPERA      (reposo; pulsar un elemento solo lo hace sonar y lucir)
+#    1 = MOSTRANDO   (el totem toca la secuencia; los elementos se ignoran)
+#    2 = RESPONDIENDO(le toca al jugador)
+#    3 = GANADA
+#    4 = PERDIDA
+#
+#  La secuencia se sortea ENTERA al armar (objetivo elementos); cada ronda
+#  muestra los `nivel` primeros. Es equivalente al Simon clasico (anadir
+#  uno por ronda) y no hay que tocar el array a mitad de partida.
+# ---------------------------------------------------------------------
+
+globals:
+  - id: totem_estado
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: totem_secuencia
+    type: int[16]            # de sobra; se usan `objetivo` posiciones
+    restore_value: false
+  - id: totem_nivel          # cuantos pasos tiene la ronda actual (1..objetivo)
+    type: int
+    restore_value: false
+    initial_value: '1'
+  - id: totem_pos            # siguiente paso que se espera del jugador
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: totem_i              # contador del bucle de mostrar
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: totem_resultado      # de la ultima pulsacion: 1 sigue, 2 ronda ok, 3 fallo
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+
+# ---------------------------------------------------------------------
+#  [3] PUERTO GROVE: alimentacion + bus I2C + MCP23017
+#
+#  Mismo contenido que modules/grove-i2c.yaml del firmware oficial, puesto
+#  aqui a mano para que se vea. El firmware base ya tiene otro bus
+#  (`internal_i2c`, GPIO5/6, para sus propios chips), por eso el MCP lleva
+#  `i2c_id` explicito.
+# ---------------------------------------------------------------------
+
+switch:
+  - platform: gpio
+    pin: GPIO46
+    id: grove_port_power
+    restore_mode: ALWAYS_ON
+    setup_priority: 1001   # antes del escaneo I2C (prioridad 1000)
+
+i2c:
+  - id: grove_i2c
+    sda: GPIO1             # hilo blanco del Grove
+    scl: GPIO2             # hilo amarillo del Grove
+    scan: true             # en el log de arranque aparece "Found i2c device at 0x27"
+
+mcp23017:
+  - id: expansor
+    i2c_id: grove_i2c
+    address: 0x27          # Waveshare: A0/A1/A2 sin puentear = 111 = 0x27
+
+
+# ---------------------------------------------------------------------
+#  [4] LOS CUATRO ELEMENTOS
+#
+#  Cada elemento: un pulsador (PA n) y un LED (PB n), mismo indice n.
+#     n  elemento  LED       sonido                    PA (boton)  PB (LED)
+#     0  FUEGO     rojo      crepitar + llamarada         PA0         PB0
+#     1  AGUA      verde     chapoteo + burbujas          PA1         PB1
+#     2  AIRE      azul      rafaga de viento             PA2         PB2
+#     3  TIERRA    amarillo  golpe de roca + pedrisco     PA3         PB3
+#
+#  El color es el del LED (o de la gema translucida sobre el). El sonido
+#  se llama snd_elem<n>: el nombre se construye concatenando, como los
+#  numeros de la v1, asi que los cuatro audio_file de [5] TIENEN que
+#  existir con ese nombre exacto.
+# ---------------------------------------------------------------------
+
+output:
+  - platform: gpio
+    id: elem_luz_0
+    pin: {mcp23xxx: expansor, number: 8, mode: {output: true}}
+  - platform: gpio
+    id: elem_luz_1
+    pin: {mcp23xxx: expansor, number: 9, mode: {output: true}}
+  - platform: gpio
+    id: elem_luz_2
+    pin: {mcp23xxx: expansor, number: 10, mode: {output: true}}
+  - platform: gpio
+    id: elem_luz_3
+    pin: {mcp23xxx: expansor, number: 11, mode: {output: true}}
+
+binary_sensor:
+  - platform: gpio
+    id: elem_boton_0
+    name: "Totem fuego (rojo)"
+    pin: {mcp23xxx: expansor, number: 0, mode: {input: true, pullup: true}, inverted: true}
+    filters: [delayed_on: 25ms, delayed_off: 50ms]
+    on_press:
+      - script.execute: {id: totem_pulsar, elemento: 0}
+  - platform: gpio
+    id: elem_boton_1
+    name: "Totem agua (verde)"
+    pin: {mcp23xxx: expansor, number: 1, mode: {input: true, pullup: true}, inverted: true}
+    filters: [delayed_on: 25ms, delayed_off: 50ms]
+    on_press:
+      - script.execute: {id: totem_pulsar, elemento: 1}
+  - platform: gpio
+    id: elem_boton_2
+    name: "Totem aire (azul)"
+    pin: {mcp23xxx: expansor, number: 2, mode: {input: true, pullup: true}, inverted: true}
+    filters: [delayed_on: 25ms, delayed_off: 50ms]
+    on_press:
+      - script.execute: {id: totem_pulsar, elemento: 2}
+  - platform: gpio
+    id: elem_boton_3
+    name: "Totem tierra (amarillo)"
+    pin: {mcp23xxx: expansor, number: 3, mode: {input: true, pullup: true}, inverted: true}
+    filters: [delayed_on: 25ms, delayed_off: 50ms]
+    on_press:
+      - script.execute: {id: totem_pulsar, elemento: 3}
+
+  # Triple clic en el boton central = armar (identico a la v1: `!extend`
+  # concatena, el bloque de fabrica sigue intacto; aqui va SOLO lo nuevo).
+  - id: !extend center_button
+    on_multi_click:
+      - timing:
+          - ON for at most 1s
+          - OFF for at most 0.25s
+          - ON for at most 1s
+          - OFF for at most 0.25s
+          - ON for at most 1s
+          - OFF for at least 0.25s
+        then:
+          - script.execute: totem_armar
+
+
+# ---------------------------------------------------------------------
+#  [5] AUDIOS. Duraciones REALES (ffprobe); los `delay` salen de aqui.
+#
+#    fuego/agua/aire/tierra.flac  0.60 s cada uno (fijo por diseño)
+#    armar.flac       1.30 s
+#    turno.flac       0.50 s
+#    erupcion.flac    7.60 s   (rumble + rugido + explosion de la v1)
+#    tribu.flac       5.80 s
+#    perdiste.flac    1.10 s   } reutilizados de la v1
+#    chupito.flac     1.30 s   }
+#    ganado.flac      1.00 s   }
+#    coge_hueso.flac  1.24 s
+# ---------------------------------------------------------------------
+
+audio_file:
+  - id: snd_elem0
+    file: sounds/fuego.flac
+  - id: snd_elem1
+    file: sounds/agua.flac
+  - id: snd_elem2
+    file: sounds/aire.flac
+  - id: snd_elem3
+    file: sounds/tierra.flac
+  - id: snd_armar
+    file: sounds/armar.flac
+  - id: snd_turno
+    file: sounds/turno.flac
+  - id: snd_erupcion
+    file: sounds/erupcion.flac
+  - id: snd_tribu
+    file: sounds/tribu.flac
+  - id: snd_perdiste
+    file: sounds/perdiste.flac
+  - id: snd_chupito
+    file: sounds/chupito.flac
+  - id: snd_ganado
+    file: sounds/ganado.flac
+  - id: snd_coge_hueso
+    file: sounds/coge_hueso.flac
+
+
+# ---------------------------------------------------------------------
+#  [6] EFECTOS DEL ARO (led_ring). Ver v1 para lo de las dos particiones.
+# ---------------------------------------------------------------------
+
+light:
+  - id: !extend led_ring
+    effects:
+      - addressable_lambda:
+          # El espiritu habla: violeta respirando despacio. Fase MOSTRANDO.
+          name: "espiritu"
+          update_interval: 40ms
+          lambda: |-
+            static float fase = 0;
+            fase += 0.08f;
+            float v = 0.35f + 0.65f * (0.5f + 0.5f * sinf(fase));
+            for (int i = 0; i < it.size(); i++)
+              it[i] = Color(120 * v, 0, 200 * v);
+      - addressable_lambda:
+          # Te toca: verde con un punto blanco dando vueltas, como un
+          # reloj de arena. Fase RESPONDIENDO.
+          name: "turno"
+          update_interval: 80ms
+          lambda: |-
+            static uint8_t cabeza = 0;
+            for (int i = 0; i < it.size(); i++)
+              it[i] = (i == cabeza) ? Color(255, 255, 255) : Color(0, 110, 30);
+            cabeza = (cabeza + 1) % it.size();
+      - addressable_lambda:
+          # Lava: naranja/rojo burbujeando al azar. Erupcion.
+          name: "lava"
+          update_interval: 70ms
+          lambda: |-
+            for (int i = 0; i < it.size(); i++) {
+              uint32_t r = random_uint32() % 4;
+              it[i] = (r == 0) ? Color(255, 200, 40)
+                    : (r == 1) ? Color(255, 80, 0)
+                               : Color(160, 0, 0);
+            }
+      - addressable_lambda:
+          # Fuego de fiesta: amarillo/naranja/rojo girando. Victoria.
+          name: "hoguera"
+          update_interval: 90ms
+          lambda: |-
+            static uint8_t offset = 0;
+            static const Color paleta[6] = {
+              Color(255, 200, 0), Color(255, 120, 0), Color(255, 30, 0),
+              Color(255, 200, 0), Color(255, 255, 120), Color(255, 120, 0),
+            };
+            for (int i = 0; i < it.size(); i++) it[i] = paleta[(i + offset) % 6];
+            offset = (offset + 1) % 6;
+      - addressable_lambda:
+          # Arcoiris girando (igual que en la v1).
+          name: "arcoiris"
+          update_interval: 60ms
+          lambda: |-
+            static int tono = 0;
+            for (int i = 0; i < it.size(); i++) {
+              float r = 0, g = 0, b = 0;
+              hsv_to_rgb((tono + i * 30) % 360, 1.0f, 1.0f, r, g, b);
+              it[i] = Color(r * 255, g * 255, b * 255);
+            }
+            tono = (tono + 8) % 360;
+
+
+# ---------------------------------------------------------------------
+#  [7] SCRIPTS DEL JUEGO
+# ---------------------------------------------------------------------
+
+script:
+  # -------------------------------------------------- SONAR (unico sitio
+  # que toca el altavoz; ver cabecera). mode: restart -> gana la ultima.
+  - id: totem_sonar
+    mode: restart
+    parameters:
+      fichero: string
+    then:
+      - media_player.stop:
+          id: external_media_player
+          announcement: true
+      - delay: 60ms
+      - lambda: |-
+          id(external_media_player)
+            ->make_call()
+            .set_media_url("audio-file://" + fichero)
+            .set_announcement(true)
+            .perform();
+
+  # -------------------------------------------------- LUZ DE UN HUESO
+  # Unico sitio que traduce "elemento n" a su salida del MCP. Se llama desde
+  # tres sitios; asi el mapeo de pines vive en [4] y aqui, y en ningun
+  # otro lado.
+  - id: totem_luz
+    mode: parallel
+    parameters:
+      elemento: int
+      encendida: bool
+    then:
+      - lambda: |-
+          output::BinaryOutput *salidas[4] = {
+            id(elem_luz_0), id(elem_luz_1), id(elem_luz_2), id(elem_luz_3)};
+          if (elemento < 0 || elemento > 3) return;
+          if (encendida) salidas[elemento]->turn_on(); else salidas[elemento]->turn_off();
+
+  - id: totem_luces_off
+    mode: restart
+    then:
+      - output.turn_off: elem_luz_0
+      - output.turn_off: elem_luz_1
+      - output.turn_off: elem_luz_2
+      - output.turn_off: elem_luz_3
+
+  # -------------------------------------------------- ARMAR (triple clic)
+  # Limpia lo que hubiera, sortea la secuencia entera y arranca la ronda 1.
+  - id: totem_armar
+    mode: restart
+    then:
+      - script.stop: totem_mostrar
+      - script.stop: totem_espera
+      - script.stop: totem_ganar
+      - script.stop: totem_perder
+      - script.execute: totem_luces_off
+      - media_player.stop:
+          id: external_media_player
+          announcement: true
+      - light.turn_off: {id: voice_assistant_leds}
+      - lambda: |-
+          for (int i = 0; i < 16; i++) id(totem_secuencia)[i] = random_uint32() % 4;
+          id(totem_nivel) = 1;
+          id(totem_pos) = 0;
+          id(totem_estado) = 1;   // MOSTRANDO (desde ya se ignoran los elementos)
+          char s[32] = {0};
+          for (int i = 0; i < ${objetivo}; i++) s[i] = '0' + id(totem_secuencia)[i];
+          ESP_LOGI("totem", "partida nueva, secuencia %s (0 fuego 1 agua 2 aire 3 tierra)", s);
+      - light.turn_on:
+          id: led_ring
+          effect: "espiritu"
+          brightness: 100%
+      # Respiro: deja terminar el "clic" del triple clic de fabrica (1.5 s).
+      - delay: 1600ms
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_armar"
+      - delay: 1700ms          # armar.flac dura 1.3 s + suspense
+      - script.execute: totem_mostrar
+
+  # -------------------------------------------------- MOSTRAR la ronda
+  # Toca los `nivel` primeros pasos (luz + sonido a la vez, pausa a
+  # oscuras entre medias) y despues abre el turno del jugador.
+  - id: totem_mostrar
+    mode: restart
+    then:
+      - lambda: |-
+          id(totem_estado) = 1;
+          id(totem_i) = 0;
+          ESP_LOGI("totem", "ronda %d de ${objetivo}", id(totem_nivel));
+      - light.turn_off: {id: voice_assistant_leds}
+      - light.turn_on:
+          id: led_ring
+          effect: "espiritu"
+          brightness: 100%
+      - delay: 600ms
+      - while:
+          condition:
+            lambda: 'return id(totem_i) < id(totem_nivel);'
+          then:
+            - script.execute:
+                id: totem_luz
+                elemento: !lambda 'return id(totem_secuencia)[id(totem_i)];'
+                encendida: true
+            - script.execute:
+                id: totem_sonar
+                fichero: !lambda 'return "snd_elem" + std::to_string(id(totem_secuencia)[id(totem_i)]);'
+            - delay: ${paso_on_ms}ms
+            - script.execute:
+                id: totem_luz
+                elemento: !lambda 'return id(totem_secuencia)[id(totem_i)];'
+                encendida: false
+            - delay: ${paso_off_ms}ms
+            - lambda: 'id(totem_i)++;'
+
+      # Turno del jugador: sonajero corto y aro verde.
+      - lambda: |-
+          id(totem_pos) = 0;
+          id(totem_estado) = 2;
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_turno"
+      - light.turn_on:
+          id: led_ring
+          effect: "turno"
+          brightness: 100%
+      - script.execute: totem_espera
+
+  # -------------------------------------------------- VENTANA DE RESPUESTA
+  # Si el jugador tarda mas de la cuenta en pulsar el siguiente elemento, se
+  # pierde. Cada acierto reinicia este script (mode: restart), el fin de
+  # ronda o un fallo lo paran. No hay mas cronometro que este delay.
+  - id: totem_espera
+    mode: restart
+    then:
+      - delay: !lambda |-
+          int ms = ${ventana_ms} - ${recorte_ms} * (id(totem_nivel) - 1);
+          return ms < 1000 ? 1000 : ms;
+      - logger.log: "totem: tiempo agotado"
+      - script.execute: totem_perder
+
+  # -------------------------------------------------- PULSAR un elemento
+  # mode: parallel: cada pulsacion lleva su propia luz de 350 ms sin que
+  # una pulsacion rapida mate la anterior. La logica del juego va TODA en
+  # la parte sincrona del script (antes del primer delay), asi que dos
+  # pulsaciones seguidas se procesan en orden y sin entrelazarse.
+  - id: totem_pulsar
+    mode: parallel
+    max_runs: 6
+    parameters:
+      elemento: int
+    then:
+      # Mientras el totem muestra la secuencia, los elementos no hacen nada
+      # (ni sonido: cortaria el paso que esta sonando).
+      - if:
+          condition:
+            lambda: 'return id(totem_estado) == 1;'
+          then:
+            - lambda: 'ESP_LOGD("totem", "elemento %d ignorado (mostrando)", elemento);'
+          else:
+            # Feedback siempre, tambien en reposo (sirve de prueba del
+            # cableado): el elemento se enciende y suena.
+            - script.execute:
+                id: totem_luz
+                elemento: !lambda 'return elemento;'
+                encendida: true
+            - script.execute:
+                id: totem_sonar
+                fichero: !lambda 'return "snd_elem" + std::to_string(elemento);'
+            - if:
+                condition:
+                  lambda: 'return id(totem_estado) == 2;'
+                then:
+                  - lambda: |-
+                      if (id(totem_secuencia)[id(totem_pos)] == elemento) {
+                        id(totem_pos)++;
+                        id(totem_resultado) = (id(totem_pos) >= id(totem_nivel)) ? 2 : 1;
+                      } else {
+                        id(totem_resultado) = 3;
+                      }
+                      ESP_LOGI("totem", "elemento %d -> %s", elemento,
+                               id(totem_resultado) == 1 ? "bien, sigue"
+                             : id(totem_resultado) == 2 ? "ronda completa" : "FALLO");
+                  - if:
+                      condition:
+                        lambda: 'return id(totem_resultado) == 1;'
+                      then:
+                        - script.execute: totem_espera   # reinicia la ventana
+                  - if:
+                      condition:
+                        lambda: 'return id(totem_resultado) == 2;'
+                      then:
+                        - script.stop: totem_espera
+                        - lambda: |-
+                            id(totem_estado) = 1;   // cierra el turno ya
+                            id(totem_nivel)++;
+                        - if:
+                            condition:
+                              lambda: 'return id(totem_nivel) > ${objetivo};'
+                            then:
+                              - script.execute: totem_ganar
+                            else:
+                              - script.execute: totem_siguiente_ronda
+                  - if:
+                      condition:
+                        lambda: 'return id(totem_resultado) == 3;'
+                      then:
+                        - script.stop: totem_espera
+                        - script.execute: totem_perder
+            - delay: 350ms
+            - script.execute:
+                id: totem_luz
+                elemento: !lambda 'return elemento;'
+                encendida: false
+
+  # Pausa entre rondas (que se oiga el ultimo elemento y se respire) y a
+  # mostrar la siguiente. Separado de totem_pulsar para que el `delay` no
+  # viva dentro de un script parallel.
+  - id: totem_siguiente_ronda
+    mode: restart
+    then:
+      - delay: 900ms
+      - script.execute: totem_mostrar
+
+  # -------------------------------------------------- GANAR
+  - id: totem_ganar
+    mode: restart
+    then:
+      - script.stop: totem_mostrar
+      - script.stop: totem_espera
+      - lambda: 'id(totem_estado) = 3;'
+      - logger.log: "totem: LA TRIBU TE ACEPTA"
+      - delay: 500ms
+      - light.turn_off: {id: voice_assistant_leds}
+      - light.turn_on:
+          id: led_ring
+          effect: "hoguera"
+          brightness: 100%
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_tribu"
+      # 5.8 s de tambores: los cuatro elementos van encendiendose en rueda.
+      - repeat:
+          count: 12
+          then:
+            - script.execute: totem_luces_off
+            - script.execute:
+                id: totem_luz
+                elemento: !lambda 'return (int)(iteration % 4);'
+                encendida: true
+            - delay: 250ms
+      - light.turn_on:
+          id: led_ring
+          effect: "arcoiris"
+          brightness: 100%
+      - repeat:
+          count: 12
+          then:
+            - script.execute: totem_luces_off
+            - script.execute:
+                id: totem_luz
+                elemento: !lambda 'return (int)(3 - iteration % 4);'
+                encendida: true
+            - delay: 250ms
+      - output.turn_on: elem_luz_0
+      - output.turn_on: elem_luz_1
+      - output.turn_on: elem_luz_2
+      - output.turn_on: elem_luz_3
+      - light.turn_on:
+          id: led_ring
+          effect: "hoguera"
+          brightness: 100%
+      # Veredicto + premio, misma estructura que la v1.
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_ganado"
+      - delay: 1400ms            # ganado.flac 1.0 s
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_coge_hueso"
+      - delay: 1600ms            # coge_hueso.flac 1.24 s
+      - delay: 3s                # que se vea la fiesta un poco mas
+      - script.execute: totem_reposo
+
+  # -------------------------------------------------- PERDER
+  - id: totem_perder
+    mode: restart
+    then:
+      - script.stop: totem_mostrar
+      - script.stop: totem_espera
+      - lambda: 'id(totem_estado) = 4;'
+      - logger.log: "totem: ERUPCION"
+      - light.turn_off: {id: voice_assistant_leds}
+      - light.turn_on:
+          id: led_ring
+          effect: "lava"
+          brightness: 100%
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_erupcion"
+      # Los cuatro elementos parpadean a la vez con la lava.
+      - repeat:
+          count: 19
+          then:
+            - output.turn_on: elem_luz_0
+            - output.turn_on: elem_luz_1
+            - output.turn_on: elem_luz_2
+            - output.turn_on: elem_luz_3
+            - delay: 200ms
+            - script.execute: totem_luces_off
+            - delay: 200ms
+      # 19 x 0.4 = 7.6 s = erupcion.flac
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_perdiste"
+      - delay: 1500ms            # perdiste.flac 1.1 s
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_chupito"
+      - delay: 1700ms            # chupito.flac 1.3 s
+      - light.turn_on:
+          id: led_ring
+          red: 100%
+          green: 0%
+          blue: 0%
+          brightness: 40%
+      - delay: 3s
+      - script.execute: totem_reposo
+
+  # -------------------------------------------------- REPOSO
+  # No hay cables que reempalmar: el totem vuelve solo a espera. En espera
+  # los elementos siguen sonando al pulsarlos (para jugar con ellos y para
+  # comprobar el cableado), pero no hay partida hasta el triple clic.
+  - id: totem_reposo
+    mode: restart
+    then:
+      - lambda: 'id(totem_estado) = 0;'
+      - script.execute: totem_luces_off
+      - light.turn_off: {id: led_ring}
+      - logger.log: "totem: en reposo, triple clic para armar"
+
+
+# ---------------------------------------------------------------------
+#  [8] MANTENIMIENTO EN SEGUNDO PLANO
+# ---------------------------------------------------------------------
+
+interval:
+  # Mantener apagada la otra particion del aro mientras haya partida (ver
+  # cabecera y v1). En reposo se deja al firmware de fabrica hacer lo suyo.
+  - interval: 500ms
+    then:
+      - if:
+          condition:
+            and:
+              - lambda: 'return id(totem_estado) != 0;'
+              - light.is_on: voice_assistant_leds
+          then:
+            - light.turn_off: {id: voice_assistant_leds}
