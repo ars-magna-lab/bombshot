@@ -96,6 +96,12 @@ sin tocar el YAML: basta con que el fichero se llame igual.
 
 ### Esquema
 
+Montaje de pruebas en protoboard, listo para tener al lado en el banco:
+
+![Protoboard de pruebas](img/v2-protoboard.svg)
+
+Resumen de conexiones:
+
 ```
  Voice PE (puerto Grove, base del aparato)
  ┌──────────────┐
@@ -220,9 +226,10 @@ tiene al lado en el YAML (están anotados en la sección [5]).
       2026.8.2): Flash 50,5 %, RAM 45,9 %. Para compilar en esta máquina
       ver la nota de CLAUDE.md sobre el venv de esphome y el parche del
       venv de ESP-IDF.
-- [ ] **Prueba en breadboard**: placa Waveshare al Grove, 4 pulsadores y
-      4 LEDs, flashear, y comprobar en el log `Found i2c device at
-      address 0x27`. Pulsar cada elemento en reposo: suena y luce.
+- [ ] **Prueba en protoboard** (esquema en `img/v2-protoboard.svg`):
+      placa Waveshare al Grove, 4 pulsadores y 4 LEDs, flashear, y
+      comprobar en el log `Found i2c device at address 0x27`. Pulsar cada
+      elemento en reposo: suena y luce.
 - [ ] Jugar 10 partidas seguidas y ajustar `ventana_ms` / `recorte_ms`.
       Si cuesta demasiado, subir la ventana; si se hace largo, bajar
       `objetivo` a 4.
