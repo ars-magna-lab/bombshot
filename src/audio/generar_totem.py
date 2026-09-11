@@ -13,6 +13,8 @@ pipeline de anuncios del Voice PE, ver generar_audio.guardar):
   turno.flac    sonajero corto: "te toca"              ~0.5 s
   erupcion.flac rumble + rugido grande + explosion     ~7.6 s  (derrota)
   tribu.flac    tambores de fiesta + los 4 elementos   ~5.8 s  (victoria)
+  voz_fuego/agua/aire/tierra.flac  la palabra dicha  0.9 s fijos  (lo que
+                el totem dice al mostrar la secuencia; el aro pone el color)
   coge_hueso.flac  voz "Coge un hueso."                (premio)
 
 Los cuatro sonidos de elemento duran EXACTAMENTE lo mismo (0.6 s) a
@@ -47,6 +49,7 @@ Uso:
 
 import argparse
 import os
+import subprocess
 
 import numpy as np
 
@@ -221,6 +224,20 @@ def tierra(rng):
 
 ELEMENTOS = (("fuego", fuego), ("agua", agua), ("aire", aire), ("tierra", tierra))
 
+# Voces (espeak-ng). Las cuatro palabras de elemento se rellenan a PASO_VOZ
+# segundos exactos, por el mismo motivo que los sonidos: un solo delay por
+# paso en el firmware. Son lo que el totem DICE al mostrar la secuencia
+# (version simplificada de 2026-09-11: sin LEDs externos, el aro se pone
+# del color del elemento y el Voice PE dice su nombre).
+PASO_VOZ = 0.9
+VOCES = (
+    ("voz_fuego", "Fuego.", PASO_VOZ),
+    ("voz_agua", "Agua.", PASO_VOZ),
+    ("voz_aire", "Aire.", PASO_VOZ),
+    ("voz_tierra", "Tierra.", PASO_VOZ),
+    ("coge_hueso", "Coge un hueso.", None),
+)
+
 
 # ---------------------------------------------------------------- resto
 def sonajero(rng, dur=0.5, golpes=3):
@@ -316,16 +333,25 @@ def main():
     guardar_flac("erupcion", erupcion(rng), args.out)
     guardar_flac("tribu", tribu(rng), args.out)
 
-    print("Generando voz...")
+    print("Generando voces...")
     lib = gv.cargar_libreria()
     sr = lib.espeak_Initialize(gv.AUDIO_OUTPUT_RETRIEVAL, 0, None, 0)
     lib.espeak_SetVoiceByName(b"es")
     lib.espeak_SetParameter(gv.ESPEAK_RATE, args.velocidad, 0)
-    pcm = gv.sintetizar(lib, "Coge un hueso.")
-    gv.guardar_flac(pcm, sr, os.path.join(args.out, "coge_hueso.wav"),
-                    os.path.join(args.out, "coge_hueso.flac"))
+    for nombre, texto, dur in VOCES:
+        pcm = gv.sintetizar(lib, texto)
+        flac = os.path.join(args.out, nombre + ".flac")
+        gv.guardar_flac(pcm, sr, os.path.join(args.out, nombre + ".wav"), flac)
+        if dur:
+            # Duracion fija: el firmware muestra la secuencia con un unico
+            # delay por paso, asi que las cuatro palabras han de durar igual.
+            tmp = flac + ".tmp.flac"
+            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", flac,
+                            "-af", f"apad=whole_dur={dur},atrim=0:{dur}",
+                            "-ar", "48000", "-ac", "1", "-sample_fmt", "s16", tmp], check=True)
+            os.replace(tmp, flac)
+        print(f"  {flac}")
     lib.espeak_Terminate()
-    print("  coge_hueso.flac")
     print()
     print("Listo. Copia los .flac nuevos a esphome/sounds/ y comprueba las")
     print("duraciones con ffprobe contra los delays de esphome/totem.yaml.")
