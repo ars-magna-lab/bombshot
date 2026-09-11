@@ -8,12 +8,13 @@
 #  paso, y hay que repetir la secuencia con cuatro pulsadores. Fallo =
 #  aro de lava. Cinco rondas seguidas = aro de fiesta.
 #
-#  VERSION MINIMA (2026-09-11): el UNICO audio son las cuatro palabras
-#  (fuego, agua, aire, tierra). Sin redoble al armar, sin sonajero, sin
-#  erupcion, sin tambores, sin locuciones de veredicto. Todo lo demas lo
-#  cuenta el aro. Los ficheros de esos sonidos siguen en sounds/ y en
-#  git (commit 3d1e85c) por si se quiere recuperar alguno: es un
-#  audio_file + un totem_sonar + su delay.
+#  VERSION MINIMA (2026-09-11, ajustada tras jugar): UNA sola ronda de
+#  `objetivo` elementos (8), no incremental. Audio: tres pitidos de aviso
+#  (Piiii, Pii, Pi), las cuatro palabras, "Has perdido." al fallar y
+#  "¡Bien! Has ganado." al acertar. Nada mas. Los sonidos de la version
+#  larga (redoble, erupcion, tambores...) siguen en sounds/ y en git
+#  (commit 3d1e85c): recuperar uno es un audio_file + un totem_sonar +
+#  su delay.
 #
 #    esphome config  totem.yaml    # valida
 #    esphome run     totem.yaml    # compila + flashea
@@ -78,19 +79,17 @@ wifi:
 # ---------------------------------------------------------------------
 
 substitutions:
-  # Pasos seguidos para ganar. Con 5: partida de ~25 s si se acierta todo.
-  objetivo: "5"
-  # Ventana para pulsar el SIGUIENTE elemento, en ms, en la ronda 1. Cada
-  # ronda se recorta `recorte_ms`; en la ronda 5 quedan 1800 ms. Cada
-  # acierto reinicia la ventana, asi que es "tiempo entre pulsaciones",
-  # no tiempo total.
+  # Elementos de la partida (una sola ronda, se dicen todos seguidos).
+  objetivo: "8"
+  # Ventana para pulsar el SIGUIENTE elemento, en ms. Cada acierto la
+  # reinicia, asi que es "tiempo entre pulsaciones", no tiempo total.
   ventana_ms: "3000"
-  recorte_ms: "300"
-  # Duracion de cada palabra de elemento (las cuatro miden 0.90 s exactos
-  # por diseño, generar_totem.py) y pausa a oscuras entre pasos. La pausa
-  # importa: sin ella dos pasos seguidos del mismo elemento se ven como uno.
-  paso_on_ms: "1000"
-  paso_off_ms: "300"
+  # Duracion de cada palabra de elemento (las cuatro miden 0.70 s exactos
+  # por diseño, generar_totem.py, la voz acaba antes de 0.45) y pausa a
+  # oscuras entre pasos. La pausa importa: sin ella dos pasos seguidos del
+  # mismo elemento se ven como uno. 8 pasos x 0.95 s = 7.6 s de secuencia.
+  paso_on_ms: "750"
+  paso_off_ms: "200"
 
 
 # ---------------------------------------------------------------------
@@ -102,9 +101,11 @@ substitutions:
 #    3 = GANADA
 #    4 = PERDIDA
 #
-#  La secuencia se sortea ENTERA al armar (objetivo elementos); cada ronda
-#  muestra los `nivel` primeros. Es equivalente al Simon clasico (anadir
-#  uno por ronda) y no hay que tocar el array a mitad de partida.
+#  La secuencia se sortea ENTERA al armar (`objetivo` elementos) y se
+#  muestra entera de una vez: UNA ronda, sin niveles incrementales
+#  (pedido tras jugar la version incremental). `totem_nivel` queda fijo
+#  en `objetivo`; se conserva la variable para poder volver al Simon
+#  clasico con un cambio en totem_armar.
 # ---------------------------------------------------------------------
 
 globals:
@@ -224,7 +225,10 @@ binary_sensor:
 # ---------------------------------------------------------------------
 #  [5] AUDIOS. Duraciones REALES (ffprobe); los `delay` salen de aqui.
 #
-#    voz_fuego/agua/aire/tierra.flac  0.90 s cada uno (fijo por diseño)
+#    voz_fuego/agua/aire/tierra.flac  0.70 s cada uno (fijo por diseño)
+#    cuenta.flac       1.96 s   (Piiii, Pii, Pi)
+#    perdiste.flac     1.10 s   ("Has perdido.", de la v1)
+#    bien_ganado.flac  1.88 s   ("¡Bien! Has ganado.")
 # ---------------------------------------------------------------------
 
 audio_file:
@@ -236,6 +240,12 @@ audio_file:
     file: sounds/voz_aire.flac
   - id: snd_voz3
     file: sounds/voz_tierra.flac
+  - id: snd_cuenta
+    file: sounds/cuenta.flac
+  - id: snd_perdiste
+    file: sounds/perdiste.flac
+  - id: snd_bien_ganado
+    file: sounds/bien_ganado.flac
 
 
 # ---------------------------------------------------------------------
@@ -356,7 +366,7 @@ script:
       - light.turn_off: {id: voice_assistant_leds}
       - lambda: |-
           for (int i = 0; i < 16; i++) id(totem_secuencia)[i] = random_uint32() % 4;
-          id(totem_nivel) = 1;
+          id(totem_nivel) = ${objetivo};   // una sola ronda con todos
           id(totem_pos) = 0;
           id(totem_estado) = 1;   // MOSTRANDO (desde ya se ignoran los elementos)
           char s[32] = {0};
@@ -366,9 +376,13 @@ script:
           id: led_ring
           effect: "espiritu"
           brightness: 100%
-      # Respiro: deja terminar el "clic" del triple clic de fabrica (1.5 s)
-      # y da un momento de suspense con el aro violeta.
-      - delay: 2000ms
+      # Respiro: deja terminar el "clic" del triple clic de fabrica (1.5 s).
+      - delay: 1600ms
+      # Aviso: Piiii, Pii, Pi, y arranca la secuencia.
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_cuenta"
+      - delay: 2300ms          # cuenta.flac 1.96 s
       - script.execute: totem_mostrar
 
   # -------------------------------------------------- MOSTRAR la ronda
@@ -380,13 +394,13 @@ script:
       - lambda: |-
           id(totem_estado) = 1;
           id(totem_i) = 0;
-          ESP_LOGI("totem", "ronda %d de ${objetivo}", id(totem_nivel));
+          ESP_LOGI("totem", "secuencia de %d elementos", id(totem_nivel));
       - light.turn_off: {id: voice_assistant_leds}
       - light.turn_on:
           id: led_ring
           effect: "espiritu"
           brightness: 100%
-      - delay: 600ms
+      - delay: 300ms
       - while:
           condition:
             lambda: 'return id(totem_i) < id(totem_nivel);'
@@ -419,9 +433,7 @@ script:
   - id: totem_espera
     mode: restart
     then:
-      - delay: !lambda |-
-          int ms = ${ventana_ms} - ${recorte_ms} * (id(totem_nivel) - 1);
-          return ms < 1000 ? 1000 : ms;
+      - delay: ${ventana_ms}ms
       - logger.log: "totem: tiempo agotado"
       - script.execute: totem_perder
 
@@ -477,16 +489,8 @@ script:
                         lambda: 'return id(totem_resultado) == 2;'
                       then:
                         - script.stop: totem_espera
-                        - lambda: |-
-                            id(totem_estado) = 1;   // cierra el turno ya
-                            id(totem_nivel)++;
-                        - if:
-                            condition:
-                              lambda: 'return id(totem_nivel) > ${objetivo};'
-                            then:
-                              - script.execute: totem_ganar
-                            else:
-                              - script.execute: totem_siguiente_ronda
+                        - lambda: 'id(totem_estado) = 1;'   # cierra el turno ya
+                        - script.execute: totem_ganar
                   - if:
                       condition:
                         lambda: 'return id(totem_resultado) == 3;'
@@ -511,15 +515,6 @@ script:
                 then:
                   - light.turn_off: {id: led_ring}
 
-  # Pausa entre rondas (que se oiga el ultimo elemento y se respire) y a
-  # mostrar la siguiente. Separado de totem_pulsar para que el `delay` no
-  # viva dentro de un script parallel.
-  - id: totem_siguiente_ronda
-    mode: restart
-    then:
-      - delay: 900ms
-      - script.execute: totem_mostrar
-
   # -------------------------------------------------- GANAR
   - id: totem_ganar
     mode: restart
@@ -527,25 +522,22 @@ script:
       - script.stop: totem_mostrar
       - script.stop: totem_espera
       - lambda: 'id(totem_estado) = 3;'
-      - logger.log: "totem: LA TRIBU TE ACEPTA"
-      - delay: 500ms
+      - logger.log: "totem: GANADA"
       - light.turn_off: {id: voice_assistant_leds}
-      # Fiesta en el aro, unos 8 s: hoguera -> arcoiris -> hoguera.
       - light.turn_on:
           id: led_ring
           effect: "hoguera"
           brightness: 100%
-      - delay: 3s
+      - delay: 500ms           # que se oiga entera la ultima palabra
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_bien_ganado"
+      - delay: 2200ms          # bien_ganado.flac 1.88 s
       - light.turn_on:
           id: led_ring
           effect: "arcoiris"
           brightness: 100%
       - delay: 3s
-      - light.turn_on:
-          id: led_ring
-          effect: "hoguera"
-          brightness: 100%
-      - delay: 2s
       - script.execute: totem_reposo
 
   # -------------------------------------------------- PERDER
@@ -555,21 +547,26 @@ script:
       - script.stop: totem_mostrar
       - script.stop: totem_espera
       - lambda: 'id(totem_estado) = 4;'
-      - logger.log: "totem: ERUPCION"
+      - logger.log: "totem: PERDIDA"
       - light.turn_off: {id: voice_assistant_leds}
-      # Lava 4 s y despues rojo fijo y tenue otros 2 s: "has fallado".
-      - light.turn_on:
-          id: led_ring
-          effect: "lava"
-          brightness: 100%
-      - delay: 4s
       - light.turn_on:
           id: led_ring
           red: 100%
           green: 0%
           blue: 0%
-          brightness: 40%
-      - delay: 2s
+          brightness: 100%
+      - delay: 400ms           # que no pise la palabra del boton fallado
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_perdiste"
+      - delay: 1500ms          # perdiste.flac 1.1 s
+      - light.turn_on:
+          id: led_ring
+          red: 100%
+          green: 0%
+          blue: 0%
+          brightness: 30%
+      - delay: 1500ms
       - script.execute: totem_reposo
 
   # -------------------------------------------------- REPOSO

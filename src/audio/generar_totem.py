@@ -229,14 +229,34 @@ ELEMENTOS = (("fuego", fuego), ("agua", agua), ("aire", aire), ("tierra", tierra
 # paso en el firmware. Son lo que el totem DICE al mostrar la secuencia
 # (version simplificada de 2026-09-11: sin LEDs externos, el aro se pone
 # del color del elemento y el Voice PE dice su nombre).
-PASO_VOZ = 0.9
+PASO_VOZ = 0.7
 VOCES = (
-    ("voz_fuego", "Fuego.", PASO_VOZ),
-    ("voz_agua", "Agua.", PASO_VOZ),
-    ("voz_aire", "Aire.", PASO_VOZ),
-    ("voz_tierra", "Tierra.", PASO_VOZ),
-    ("coge_hueso", "Coge un hueso.", None),
+    # (nombre, texto, duracion fija o None, palabras por minuto)
+    ("voz_fuego", "Fuego.", PASO_VOZ, 175),      # las cuatro palabras van
+    ("voz_agua", "Agua.", PASO_VOZ, 175),        # mas rapidas que el resto
+    ("voz_aire", "Aire.", PASO_VOZ, 175),        # (pedido tras jugar:
+    ("voz_tierra", "Tierra.", PASO_VOZ, 175),    # "un poco mas rapido")
+    ("bien_ganado", "¡Bien! Has ganado.", None, 140),
+    ("coge_hueso", "Coge un hueso.", None, 135),
 )
+
+
+def cuenta_atras(rng):
+    """Tres pitidos de aviso antes de la secuencia: Piiii, Pii, Pi (cada
+    uno mas corto), 880 Hz. Total ~2.3 s."""
+    duraciones = (0.55, 0.32, 0.18)
+    hueco = 0.38
+    total = sum(duraciones) + hueco * (len(duraciones) - 1) + 0.15
+    out = np.zeros(int(total * SR))
+    pos = 0.0
+    for d in duraciones:
+        n = int(d * SR)
+        tt = np.arange(n) / SR
+        p = np.sin(2 * np.pi * 880.0 * tt) + 0.25 * np.sin(2 * np.pi * 1760.0 * tt)
+        env = np.minimum(1.0, tt / 0.01) * np.minimum(1.0, (tt[-1] - tt) / 0.03)
+        ga.mezclar(out, p * env * 0.7, pos)
+        pos += d + hueco
+    return out
 
 
 # ---------------------------------------------------------------- resto
@@ -332,13 +352,15 @@ def main():
     guardar_flac("turno", sonajero(rng, dur=0.5, golpes=3), args.out)
     guardar_flac("erupcion", erupcion(rng), args.out)
     guardar_flac("tribu", tribu(rng), args.out)
+    guardar_flac("cuenta", cuenta_atras(rng), args.out)
 
     print("Generando voces...")
     lib = gv.cargar_libreria()
     sr = lib.espeak_Initialize(gv.AUDIO_OUTPUT_RETRIEVAL, 0, None, 0)
     lib.espeak_SetVoiceByName(b"es")
     lib.espeak_SetParameter(gv.ESPEAK_RATE, args.velocidad, 0)
-    for nombre, texto, dur in VOCES:
+    for nombre, texto, dur, wpm in VOCES:
+        lib.espeak_SetParameter(gv.ESPEAK_RATE, wpm, 0)
         pcm = gv.sintetizar(lib, texto)
         flac = os.path.join(args.out, nombre + ".flac")
         gv.guardar_flac(pcm, sr, os.path.join(args.out, nombre + ".wav"), flac)
