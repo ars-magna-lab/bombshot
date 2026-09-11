@@ -397,6 +397,17 @@ la lista de materiales, el esquema y los pasos pendientes están en
   YAML. Regla del altavoz de la v1 aplicada: el tambor del chamán tuvo
   que subirse de 190 a 260-440 Hz porque con la afinación "realista" solo
   el 16 % de su energía quedaba por encima de 300 Hz.
+- **Simplificación del 2026-09-11 (la versión que se juega):** sin LEDs
+  externos y sin más audio que las cuatro palabras. El aro del Voice PE
+  se pone entero del color del elemento y el altavoz dice su nombre; al
+  pulsar, lo mismo. Fuera el redoble, el sonajero, la erupción, los
+  tambores y las locuciones de veredicto (los ficheros siguen en
+  `sounds/`, recuperar uno es un `audio_file` + un `totem_sonar` + su
+  delay). Motivo: el usuario no llegaba a tiempo con el montaje y pidió
+  "lo más simple posible". Los cuatro pulsadores en PA0-PA3 funcionan en
+  protoboard. **Ojo con la protoboard:** los carriles − de arriba y de
+  abajo NO están unidos (y a veces cada carril está partido por la
+  mitad); eso fue lo que tuvo el botón "muerto" un rato.
 - Hereda íntegro el modelo de audio y de LEDs de la v1 (un solo script
   que corta y lanza, delays fijos, sin cronómetros globales,
   `voice_assistant_leds` apagado por interval, triple clic para armar).

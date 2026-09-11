@@ -4,8 +4,12 @@ Plan de la segunda versión del juguete, para la fiesta **dino-neandertal**.
 Mismo Voice PE que la v1, juego completamente distinto y caja nueva
 ambientada en el disfraz de chamán de la tribu (máscara, collar de huesos).
 
-Estado a 2026-09-07: **plan cerrado, firmware escrito y compilado, audio
-generado. Sin probar todavía en hardware.** Ver "Pasos" al final.
+Estado a 2026-09-11: **versión mínima flasheada y con los cuatro
+pulsadores funcionando en protoboard.** El 2026-09-11 se simplificó a
+fondo para llegar a tiempo: **sin LEDs externos** (el aro del Voice PE
+hace de luz) y **sin más audio que las cuatro palabras** (fuego, agua,
+aire, tierra). Lo que sigue describe esa versión; lo que se quitó queda
+en git (commits `9fb62ee` y `3d1e85c`) por si se recupera.
 
 ## 1. El juego
 
@@ -17,22 +21,22 @@ ritual. El chamán invoca a los elementos y el jugador tiene que repetir
 la invocación.
 
 1. El chamán **arma** el altar: triple clic en el botón central del Voice
-   PE. Redoble de tambor, el aro se pone violeta ("el espíritu habla").
-2. El altar **toca una secuencia**: cada paso enciende un elemento y
-   suena su sonido a la vez (el fuego crepita, el agua burbujea, el aire
-   sopla, la tierra retumba), con una pausa a oscuras entre pasos. La luz
-   y el sonido van siempre juntos, así se sigue con ruido de fiesta
-   (lección de la v1: el número no se oía).
-3. Sonajero corto y aro verde: **le toca al jugador**. Repite la secuencia
-   pulsando los elementos. Cada uno que pulsa se enciende y suena.
+   PE. El aro se pone violeta ("el espíritu habla").
+2. El altar **dice la secuencia**: en cada paso el aro entero se pone del
+   color del elemento y el altavoz dice su nombre, con una pausa a
+   oscuras entre pasos. Color y palabra van siempre juntos, así se sigue
+   con ruido de fiesta (lección de la v1: el número solo no se oía).
+3. Aro verde con un punto blanco girando: **le toca al jugador**. Repite
+   la secuencia con los cuatro pulsadores. Cada pulsación pone el aro de
+   ese color y repite la palabra, como confirmación.
 4. Acierta la ronda entera → la siguiente ronda tiene un paso más.
    **Cinco rondas seguidas = victoria.**
 5. Se equivoca de elemento, o tarda demasiado en pulsar el siguiente →
-   **erupción**: aro de lava, los cuatro elementos parpadeando, rumble, rugido
-   y explosión. Voz: "Has perdido. Bebe un chupito."
-6. Victoria: tambores de la tribu, elementos en rueda, aro de hoguera y
-   arcoíris. Voz: "Has ganado. Coge un hueso." El premio son **gominolas
-   con forma de hueso** (o de dinosaurio), en un cuenco sobre el altar.
+   **erupción**: aro de lava 4 s y rojo tenue. El chupito lo dicta el
+   chamán en persona.
+6. Victoria: aro de hoguera y arcoíris unos 8 s. El premio son
+   **gominolas con forma de hueso** (o de dinosaurio), en un cuenco sobre
+   el altar.
 7. El altar vuelve solo a reposo unos segundos después. **No hay nada que
    rearmar entre rondas**: el siguiente jugador espera al triple clic.
 
@@ -52,12 +56,15 @@ para jugar con ellos y para comprobar el cableado sin arrancar partida.
 
 ### Los cuatro elementos
 
-| n | Elemento | LED      | Sonido                          | Botón | LED  |
-|---|----------|----------|---------------------------------|-------|------|
-| 0 | FUEGO    | rojo     | brasas crepitando + llamarada   | PA0   | PB0  |
-| 1 | AGUA     | verde    | chapoteo + burbujas             | PA1   | PB1  |
-| 2 | AIRE     | azul     | ráfaga de viento con silbido    | PA2   | PB2  |
-| 3 | TIERRA   | amarillo | golpe de roca + pedrisco rodando| PA3   | PB3  |
+| n | Elemento | Color del aro | Audio            | Botón |
+|---|----------|---------------|------------------|-------|
+| 0 | FUEGO    | rojo          | la palabra "fuego"  | PA0 |
+| 1 | AGUA     | verde         | la palabra "agua"   | PA1 |
+| 2 | AIRE     | azul          | la palabra "aire"   | PA2 |
+| 3 | TIERRA   | amarillo      | la palabra "tierra" | PA3 |
+
+Las palabras son `voz_*.flac`, espeak-ng, rellenadas a 0,9 s exactos para
+que el firmware muestre la secuencia con un solo `delay` por paso.
 
 Los colores son los LEDs que hay en casa (rojo, verde, azul, amarillo;
 el blanco queda de repuesto). Los cuatro sonidos duran exactamente 0,6 s
