@@ -13,9 +13,12 @@ pipeline de anuncios del Voice PE, ver generar_audio.guardar):
   turno.flac    sonajero corto: "te toca"              ~0.5 s
   erupcion.flac rumble + rugido grande + explosion     ~7.6 s  (derrota)
   tribu.flac    tambores de fiesta + los 4 elementos   ~5.8 s  (victoria)
-  voz_fuego/agua/aire/tierra.flac  la palabra dicha  0.9 s fijos  (lo que
+  voz_fuego/agua/aire/tierra.flac  la palabra dicha, 0.7 s fijos (lo que
                 el totem dice al mostrar la secuencia; el aro pone el color)
-  coge_hueso.flac  voz "Coge un hueso."                (premio)
+  cuenta.flac      Piiii, Pii, Pi: aviso antes de la secuencia
+  has_perdido.flac / bien_ganado.flac  veredictos
+  coge_hueso.flac  voz "Coge un hueso."                (sin uso ahora)
+  TODO 48 kHz mono 16 BITS. Con 24 bits el Voice PE se cuelga (ver VOCES).
 
 Los cuatro sonidos de elemento duran EXACTAMENTE lo mismo (0.6 s) a
 proposito: asi el firmware muestra la secuencia con un unico `delay` por
@@ -237,6 +240,7 @@ VOCES = (
     ("voz_aire", "Aire.", PASO_VOZ, 175),        # (pedido tras jugar:
     ("voz_tierra", "Tierra.", PASO_VOZ, 175),    # "un poco mas rapido")
     ("bien_ganado", "¡Bien! Has ganado.", None, 140),
+    ("has_perdido", "Has perdido.", None, 140),
     ("coge_hueso", "Coge un hueso.", None, 135),
 )
 
@@ -364,14 +368,17 @@ def main():
         pcm = gv.sintetizar(lib, texto)
         flac = os.path.join(args.out, nombre + ".flac")
         gv.guardar_flac(pcm, sr, os.path.join(args.out, nombre + ".wav"), flac)
-        if dur:
-            # Duracion fija: el firmware muestra la secuencia con un unico
-            # delay por paso, asi que las cuatro palabras han de durar igual.
-            tmp = flac + ".tmp.flac"
-            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", flac,
-                            "-af", f"apad=whole_dur={dur},atrim=0:{dur}",
-                            "-ar", "48000", "-ac", "1", "-sample_fmt", "s16", tmp], check=True)
-            os.replace(tmp, flac)
+        # SIEMPRE se reencodea a 48 kHz mono 16 bits. gv.guardar_flac deja
+        # el FLAC en 24 bits, y con 24 bits el Voice PE mete un remuestreador
+        # que se CUELGA y a partir de ahi descarta todo ("Queue full, URI
+        # dropped"): fue lo que dejaba mudo el totem tras la primera partida
+        # (2026-09-11). Las cuatro palabras ademas se rellenan a `dur` fijo:
+        # el firmware muestra la secuencia con un unico delay por paso.
+        tmp = flac + ".tmp.flac"
+        af = f"apad=whole_dur={dur},atrim=0:{dur}" if dur else "anull"
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", flac, "-af", af,
+                        "-ar", "48000", "-ac", "1", "-sample_fmt", "s16", tmp], check=True)
+        os.replace(tmp, flac)
         print(f"  {flac}")
     lib.espeak_Terminate()
     print()

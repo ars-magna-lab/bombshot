@@ -9,7 +9,7 @@
 #  aro de lava. Cinco rondas seguidas = aro de fiesta.
 #
 #  VERSION MINIMA (2026-09-11, ajustada tras jugar): UNA sola ronda de
-#  `objetivo` elementos (8), no incremental. Audio: tres pitidos de aviso
+#  `objetivo` elementos (6), no incremental. Audio: tres pitidos de aviso
 #  (Piiii, Pii, Pi), las cuatro palabras, "Has perdido." al fallar y
 #  "¡Bien! Has ganado." al acertar. Nada mas. Los sonidos de la version
 #  larga (redoble, erupcion, tambores...) siguen en sounds/ y en git
@@ -80,14 +80,14 @@ wifi:
 
 substitutions:
   # Elementos de la partida (una sola ronda, se dicen todos seguidos).
-  objetivo: "8"
+  objetivo: "6"
   # Ventana para pulsar el SIGUIENTE elemento, en ms. Cada acierto la
   # reinicia, asi que es "tiempo entre pulsaciones", no tiempo total.
   ventana_ms: "3000"
   # Duracion de cada palabra de elemento (las cuatro miden 0.70 s exactos
   # por diseño, generar_totem.py, la voz acaba antes de 0.45) y pausa a
   # oscuras entre pasos. La pausa importa: sin ella dos pasos seguidos del
-  # mismo elemento se ven como uno. 8 pasos x 0.95 s = 7.6 s de secuencia.
+  # mismo elemento se ven como uno. 6 pasos x 0.95 s = 5.7 s de secuencia.
   paso_on_ms: "750"
   paso_off_ms: "200"
 
@@ -227,8 +227,14 @@ binary_sensor:
 #
 #    voz_fuego/agua/aire/tierra.flac  0.70 s cada uno (fijo por diseño)
 #    cuenta.flac       1.96 s   (Piiii, Pii, Pi)
-#    perdiste.flac     1.10 s   ("Has perdido.", de la v1)
+#    has_perdido.flac  1.10 s   ("Has perdido.")
 #    bien_ganado.flac  1.88 s   ("¡Bien! Has ganado.")
+#  TODOS a 48 kHz mono 16 BITS. Los dos veredictos eran de 24 bits (los
+#  sacaba asi generar_voces.py) y con eso el Voice PE arranca un
+#  remuestreador que se cuelga; desde ese momento descarta todo lo que se
+#  le manda ("Queue full, URI dropped") hasta reiniciar. Sintoma: "a
+#  partir de la segunda partida no suena nada". Si se anade un audio,
+#  comprobar con ffprobe que es s16.
 # ---------------------------------------------------------------------
 
 audio_file:
@@ -243,7 +249,7 @@ audio_file:
   - id: snd_cuenta
     file: sounds/cuenta.flac
   - id: snd_perdiste
-    file: sounds/perdiste.flac
+    file: sounds/has_perdido.flac
   - id: snd_bien_ganado
     file: sounds/bien_ganado.flac
 
@@ -559,7 +565,7 @@ script:
       - script.execute:
           id: totem_sonar
           fichero: "snd_perdiste"
-      - delay: 1500ms          # perdiste.flac 1.1 s
+      - delay: 1500ms          # has_perdido.flac 1.1 s
       - light.turn_on:
           id: led_ring
           red: 100%
