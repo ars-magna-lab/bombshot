@@ -83,7 +83,10 @@ substitutions:
   objetivo: "6"
   # Ventana para pulsar el SIGUIENTE elemento, en ms. Cada acierto la
   # reinicia, asi que es "tiempo entre pulsaciones", no tiempo total.
-  ventana_ms: "5000"
+  # En los ultimos `aviso_ms` suenan otra vez los pitidos (Piiii, Pii, Pi)
+  # para avisar de que se acaba el tiempo.
+  ventana_ms: "10000"
+  aviso_ms: "3000"
   # Duracion de cada palabra de elemento (las cuatro miden 0.70 s exactos
   # por diseño, generar_totem.py, la voz acaba antes de 0.45) y pausa a
   # oscuras entre pasos. La pausa importa: sin ella dos pasos seguidos del
@@ -440,11 +443,18 @@ script:
   # -------------------------------------------------- VENTANA DE RESPUESTA
   # Si el jugador tarda mas de la cuenta en pulsar el siguiente elemento, se
   # pierde. Cada acierto reinicia este script (mode: restart), el fin de
-  # ronda o un fallo lo paran. No hay mas cronometro que este delay.
+  # ronda o un fallo lo paran. No hay mas cronometro que estos delays.
   - id: totem_espera
     mode: restart
     then:
-      - delay: ${ventana_ms}ms
+      - delay: !lambda 'return ${ventana_ms} - ${aviso_ms};'
+      # Aviso: los mismos pitidos del principio. Si el jugador pulsa
+      # durante el aviso, la palabra del boton los corta (totem_sonar) y
+      # este script se reinicia; no hace falta nada mas.
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_cuenta"
+      - delay: ${aviso_ms}ms
       - logger.log: "totem: tiempo agotado"
       - script.execute: totem_perder
 
