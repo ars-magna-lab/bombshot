@@ -241,6 +241,8 @@ VOCES = (
     ("voz_tierra", "Tierra.", PASO_VOZ, 175),    # "un poco mas rapido")
     ("bien_ganado", "¡Bien! Has ganado.", None, 140),
     ("has_perdido", "Has perdido.", None, 140),
+    ("bebe_chupito", "Bebe un chupito.", None, 140),
+    ("coge_chuche", "Coge una chuche.", None, 140),
     ("coge_hueso", "Coge un hueso.", None, 135),
 )
 

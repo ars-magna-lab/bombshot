@@ -11,7 +11,9 @@
 #  VERSION MINIMA (2026-09-11, ajustada tras jugar): UNA sola ronda de
 #  `objetivo` elementos (6), no incremental. Audio: tres pitidos de aviso
 #  (Piiii, Pii, Pi), las cuatro palabras, "Has perdido." al fallar y
-#  "¡Bien! Has ganado." al acertar. Nada mas. Los sonidos de la version
+#  "¡Bien! Has ganado." al acertar, cada veredicto dos veces, seguido del
+#  premio ("Bebe un chupito." / "Coge una chuche.") y, al ganar, los
+#  tambores de la tribu con el aro de fiesta. Los sonidos de la version
 #  larga (redoble, erupcion, tambores...) siguen en sounds/ y en git
 #  (commit 3d1e85c): recuperar uno es un audio_file + un totem_sonar +
 #  su delay.
@@ -230,8 +232,11 @@ binary_sensor:
 #
 #    voz_fuego/agua/aire/tierra.flac  0.70 s cada uno (fijo por diseño)
 #    cuenta.flac       1.96 s   (Piiii, Pii, Pi)
-#    has_perdido.flac  1.10 s   ("Has perdido.")
+#    has_perdido.flac  1.05 s   ("Has perdido.")
+#    bebe_chupito.flac 1.28 s   ("Bebe un chupito.")
 #    bien_ganado.flac  1.88 s   ("¡Bien! Has ganado.")
+#    coge_chuche.flac  1.31 s   ("Coge una chuche.")
+#    tribu.flac        5.80 s   (tambores de la tribu, musica de victoria)
 #  TODOS a 48 kHz mono 16 BITS. Los dos veredictos eran de 24 bits (los
 #  sacaba asi generar_voces.py) y con eso el Voice PE arranca un
 #  remuestreador que se cuelga; desde ese momento descarta todo lo que se
@@ -255,6 +260,12 @@ audio_file:
     file: sounds/has_perdido.flac
   - id: snd_bien_ganado
     file: sounds/bien_ganado.flac
+  - id: snd_chupito
+    file: sounds/bebe_chupito.flac
+  - id: snd_chuche
+    file: sounds/coge_chuche.flac
+  - id: snd_tribu
+    file: sounds/tribu.flac
 
 
 # ---------------------------------------------------------------------
@@ -553,15 +564,42 @@ script:
           effect: "hoguera"
           brightness: 100%
       - delay: 500ms           # que se oiga entera la ultima palabra
+      # Veredicto dos veces, premio, y musica con el aro de fiesta.
       - script.execute:
           id: totem_sonar
           fichero: "snd_bien_ganado"
       - delay: 2200ms          # bien_ganado.flac 1.88 s
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_bien_ganado"
+      - delay: 2200ms
       - light.turn_on:
           id: led_ring
           effect: "arcoiris"
           brightness: 100%
-      - delay: 3s
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_chuche"
+      - delay: 1700ms          # coge_chuche.flac 1.31 s
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_tribu"
+      # 5.8 s de tambores: hoguera -> arcoiris -> hoguera.
+      - light.turn_on:
+          id: led_ring
+          effect: "hoguera"
+          brightness: 100%
+      - delay: 2000ms
+      - light.turn_on:
+          id: led_ring
+          effect: "arcoiris"
+          brightness: 100%
+      - delay: 2000ms
+      - light.turn_on:
+          id: led_ring
+          effect: "hoguera"
+          brightness: 100%
+      - delay: 2200ms
       - script.execute: totem_reposo
 
   # -------------------------------------------------- PERDER
@@ -589,6 +627,10 @@ script:
           id: totem_sonar
           fichero: "snd_perdiste"
       - delay: 1600ms
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_chupito"
+      - delay: 1700ms          # bebe_chupito.flac 1.28 s
       - light.turn_on:
           id: led_ring
           red: 100%
