@@ -469,13 +469,16 @@ script:
     parameters:
       elemento: int
     then:
-      # Mientras el totem muestra la secuencia, los elementos no hacen nada
-      # (ni sonido: cortaria el paso que esta sonando).
+      # Los botones solo hacen algo en reposo (0) y respondiendo (2).
+      # Mientras el totem muestra la secuencia (1) cortarian el paso que
+      # esta sonando; y en victoria (3) o derrota (4) pisarian el veredicto
+      # (pedido tras jugar: la gente sigue pulsando y no se entendia el
+      # "Has perdido").
       - if:
           condition:
-            lambda: 'return id(totem_estado) == 1;'
+            lambda: 'return id(totem_estado) != 0 && id(totem_estado) != 2;'
           then:
-            - lambda: 'ESP_LOGD("totem", "elemento %d ignorado (mostrando)", elemento);'
+            - lambda: 'ESP_LOGD("totem", "elemento %d ignorado (estado %d)", elemento, id(totem_estado));'
           else:
             # Feedback siempre, tambien en reposo (sirve de prueba del
             # cableado): el aro se pone del color del elemento y se dice
@@ -577,10 +580,15 @@ script:
           blue: 0%
           brightness: 100%
       - delay: 400ms           # que no pise la palabra del boton fallado
+      # "Has perdido", dos veces, con el aro en rojo fijo todo el rato.
       - script.execute:
           id: totem_sonar
           fichero: "snd_perdiste"
-      - delay: 1500ms          # has_perdido.flac 1.1 s
+      - delay: 1600ms          # has_perdido.flac 1.05 s + pausa
+      - script.execute:
+          id: totem_sonar
+          fichero: "snd_perdiste"
+      - delay: 1600ms
       - light.turn_on:
           id: led_ring
           red: 100%
