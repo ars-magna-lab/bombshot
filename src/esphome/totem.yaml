@@ -170,7 +170,7 @@ mcp23017:
 #     0  FUEGO     rojo               PA0
 #     1  AGUA      verde              PA1
 #     2  AIRE      azul               PA2
-#     3  TIERRA    amarillo           PA3
+#     3  TIERRA    lila               PA3
 #
 #  La palabra se llama snd_voz<n>: el nombre se construye concatenando,
 #  como los numeros de la v1, asi que los cuatro audio_file de [5] TIENEN
@@ -201,7 +201,7 @@ binary_sensor:
       - script.execute: {id: totem_pulsar, elemento: 2}
   - platform: gpio
     id: elem_boton_3
-    name: "Totem tierra (amarillo)"
+    name: "Totem tierra (lila)"
     pin: {mcp23xxx: expansor, number: 3, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 25ms, delayed_off: 50ms]
     on_press:
@@ -262,7 +262,9 @@ light:
   - id: !extend led_ring
     effects:
       - addressable_lambda:
-          # El espiritu habla: violeta respirando despacio. Fase MOSTRANDO.
+          # El espiritu habla: blanco calido respirando despacio. Fase
+          # MOSTRANDO. (Era violeta; desde que tierra es lila, se cambio
+          # para que no se confundan.)
           name: "espiritu"
           update_interval: 40ms
           lambda: |-
@@ -270,7 +272,7 @@ light:
             fase += 0.08f;
             float v = 0.35f + 0.65f * (0.5f + 0.5f * sinf(fase));
             for (int i = 0; i < it.size(); i++)
-              it[i] = Color(120 * v, 0, 200 * v);
+              it[i] = Color(255 * v, 170 * v, 110 * v);
       - addressable_lambda:
           # Te toca: verde con un punto blanco dando vueltas, como un
           # reloj de arena. Fase RESPONDIENDO.
@@ -353,9 +355,12 @@ script:
       - light.turn_on:
           id: led_ring
           brightness: 100%
-          red: !lambda   'static const float r[4] = {1.0f, 0.0f, 0.0f, 1.0f}; return r[elemento & 3];'
-          green: !lambda 'static const float g[4] = {0.0f, 1.0f, 0.0f, 0.6f}; return g[elemento & 3];'
-          blue: !lambda  'static const float b[4] = {0.0f, 0.0f, 1.0f, 0.0f}; return b[elemento & 3];'
+          # fuego rojo, agua verde, aire azul, tierra LILA (era amarillo;
+          # cambiado el 2026-09-12 al romperse el pulsador amarillo y
+          # sustituirlo por uno lila).
+          red: !lambda   'static const float r[4] = {1.0f, 0.0f, 0.0f, 0.75f}; return r[elemento & 3];'
+          green: !lambda 'static const float g[4] = {0.0f, 1.0f, 0.0f, 0.10f}; return g[elemento & 3];'
+          blue: !lambda  'static const float b[4] = {0.0f, 0.0f, 1.0f, 1.00f}; return b[elemento & 3];'
 
   # -------------------------------------------------- ARMAR (triple clic)
   # Limpia lo que hubiera, sortea la secuencia entera y arranca la ronda 1.

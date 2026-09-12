@@ -61,13 +61,14 @@ para jugar con ellos y para comprobar el cableado sin arrancar partida.
 | 0 | FUEGO    | rojo          | la palabra "fuego"  | PA0 |
 | 1 | AGUA     | verde         | la palabra "agua"   | PA1 |
 | 2 | AIRE     | azul          | la palabra "aire"   | PA2 |
-| 3 | TIERRA   | amarillo      | la palabra "tierra" | PA3 |
+| 3 | TIERRA   | lila          | la palabra "tierra" | PA3 |
 
 Las palabras son `voz_*.flac`, espeak-ng, rellenadas a 0,9 s exactos para
 que el firmware muestre la secuencia con un solo `delay` por paso.
 
-Los colores son los LEDs que hay en casa (rojo, verde, azul, amarillo;
-el blanco queda de repuesto). Los cuatro sonidos duran exactamente 0,6 s
+Tierra era amarillo; pasó a lila el 2026-09-12 al romperse el pulsador
+amarillo y sustituirlo por uno lila. El aro de "armando" pasó de violeta
+a blanco cálido para no confundirse con él. Los cuatro sonidos duran exactamente 0,6 s
 (`audio/generar_totem.py`), de modo que el firmware muestra la secuencia
 con un solo `delay` por paso.
 

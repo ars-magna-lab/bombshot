@@ -367,9 +367,9 @@ la lista de materiales, el esquema y los pasos pendientes están en
 `docs/v2-plan.md`**; aquí solo las decisiones que no se deducen del código.
 
 - **Juego: Simon ritual de los cuatro elementos** (`src/esphome/totem.yaml`):
-  fuego = rojo, agua = verde, aire = azul, tierra = amarillo (decisión del
-  usuario, con los LEDs que tiene en casa; el verde para el agua no es un
-  error). Cada elemento = pulsador + LED de color + sonido propio
+  fuego = rojo, agua = verde, aire = azul, tierra = **lila** (era amarillo
+  hasta el 2026-09-12: se rompió el pulsador amarillo y se cambió por uno
+  lila; el verde para el agua no es un error, es decisión del usuario). Cada elemento = pulsador + LED de color + sonido propio
   (crepitar, burbujas, viento, roca). El altar toca una
   secuencia, el jugador la repite; 5 rondas seguidas = victoria, fallo o
   tardar demasiado = erupción. Se eligió sobre "reflejos" y "deducción"
