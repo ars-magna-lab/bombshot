@@ -83,7 +83,7 @@ substitutions:
   objetivo: "6"
   # Ventana para pulsar el SIGUIENTE elemento, en ms. Cada acierto la
   # reinicia, asi que es "tiempo entre pulsaciones", no tiempo total.
-  ventana_ms: "3000"
+  ventana_ms: "5000"
   # Duracion de cada palabra de elemento (las cuatro miden 0.70 s exactos
   # por diseño, generar_totem.py, la voz acaba antes de 0.45) y pausa a
   # oscuras entre pasos. La pausa importa: sin ella dos pasos seguidos del
