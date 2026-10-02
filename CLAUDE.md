@@ -69,7 +69,7 @@ entre rondas.
      suena **al ganar**, recortada al tramo 19s-30s (~11 s,
      `sounds/macgyver_intro_recorte.mp3`). Uso privado en un dispositivo
      propio para una fiesta en casa, sin redistribuir.
-   - **Ese audio NO está en el repo** (`github.com/eduherraiz/bombshot`,
+   - **Ese audio NO está en el repo** (`github.com/ars-magna-lab/bombshot`,
      público): está en `.gitignore` junto con el original completo,
      porque subirlo sería redistribuirlo. Vive solo en local. La
      alternativa sintetizada sin copyright (`audio/generar_intro.py` →
